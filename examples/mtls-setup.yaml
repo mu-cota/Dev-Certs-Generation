@@ -1,0 +1,35 @@
+output_root: "output"
+
+ca_country: "SG"
+ca_state: "Singapore"
+ca_locality: "Singapore"
+ca_organization: "Example Bank"
+ca_ou: "Service Mesh"
+ca_common_name: "Example Bank mTLS CA"
+ca_validity_days: "730"
+ca_curve: "secp384r1"
+
+default_country: "SG"
+default_state: "Singapore"
+default_locality: "Singapore"
+default_organization: "Example Bank"
+default_ou: "Service Mesh"
+default_validity_days: "365"
+default_curve: "secp384r1"
+
+cert.payments-api.type: "server"
+cert.payments-api.cn: "payments-api"
+cert.payments-api.san_dns: "payments-api,payments-api.service.svc,localhost"
+cert.payments-api.san_ip: "127.0.0.1"
+cert.payments-api.formats: "pem,pkcs12,jks"
+
+cert.risk-engine.type: "client"
+cert.risk-engine.cn: "risk-engine"
+cert.risk-engine.san_dns: "risk-engine.internal"
+cert.risk-engine.formats: "pem,pkcs12,jks"
+
+cert.audit-worker.type: "client"
+cert.audit-worker.cn: "audit-worker"
+cert.audit-worker.san_dns: "audit-worker.internal"
+cert.audit-worker.formats: "pem,pkcs12,jks"
+

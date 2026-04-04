@@ -1,0 +1,319 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+source "${SCRIPT_DIR}/lib/common.sh"
+source "${SCRIPT_DIR}/lib/config.sh"
+source "${SCRIPT_DIR}/lib/ca.sh"
+source "${SCRIPT_DIR}/lib/extensions.sh"
+source "${SCRIPT_DIR}/lib/formats.sh"
+source "${SCRIPT_DIR}/lib/validate.sh"
+source "${SCRIPT_DIR}/lib/cert.sh"
+
+usage() {
+  cat <<'EOF'
+PKI Certificate Generation Toolkit
+
+Usage:
+  ./certgen --config <file> [--fresh-ca] [--output-root <dir>] [--package-web|--no-package-web]
+  ./certgen <config-file> [--fresh-ca] [--output-root <dir>] [--package-web|--no-package-web]  # shorthand
+
+  ./certgen server --cn <name> [options]
+  ./certgen client --cn <name> [options]
+  ./certgen ca [--fresh] [--info] [--output-root <dir>] [--curve <name>] [--days <n>]
+  ./certgen verify --cert <path> --ca <path> [--expected-dns <csv>] [--expected-ip <csv>]
+  ./certgen doctor
+
+Common options for server/client:
+  --name <id>           Output folder name (defaults to CN)
+  --san-dns <csv>       DNS SANs, comma-separated
+  --san-ip <csv>        IP SANs, comma-separated
+  --formats <csv>       pem,pkcs12,jks (default: pem)
+  --fresh-ca            Recreate CA before issuing cert
+  --output-root <dir>   Output root (default: output)
+  --package-web         Server only: emit fullchain.pem + privkey.pem (default: on)
+  --no-package-web      Server only: disable fullchain.pem + privkey.pem
+
+Friendly defaults:
+  - server: if --san-dns is omitted, defaults to "<cn>,localhost"
+  - client: if --san-dns is omitted, defaults to "<cn>"
+
+Quick start:
+  ./certgen certgen.yaml --fresh-ca
+  ./certgen server --cn vault-0 --san-dns "vault-0,localhost" --san-ip "127.0.0.1"
+  ./certgen doctor
+EOF
+}
+
+run_doctor() {
+  log_info "Running environment checks"
+  require_command openssl
+  log_ok "openssl found: $(command -v openssl)"
+
+  if openssl version >/dev/null 2>&1; then
+    log_info "openssl version: $(openssl version)"
+  fi
+
+  check_openssl_curve "secp384r1"
+  log_ok "OpenSSL supports secp384r1"
+
+  if command -v keytool >/dev/null 2>&1; then
+    log_info "keytool found: $(command -v keytool)"
+    if keytool -help >/dev/null 2>&1; then
+      log_ok "Java runtime available for JKS conversion"
+    else
+      log_warn "keytool exists but Java runtime is unavailable; JKS conversion will be skipped"
+    fi
+  else
+    log_warn "keytool not found; JKS conversion will be skipped"
+  fi
+
+  log_ok "Doctor checks complete"
+}
+
+run_batch_mode() {
+  local config_file=""
+  local fresh_ca=false
+  local package_web_override=""
+  local output_root=""
+  local cert_name cert_type cn san_dns san_ip formats package_web
+  local country state locality organization ou days curve
+  local ca_country ca_state ca_locality ca_org ca_ou ca_cn ca_days ca_curve
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --config) config_file="${2:-}"; shift 2 ;;
+      --fresh-ca) fresh_ca=true; shift ;;
+      --package-web) package_web_override="true"; shift ;;
+      --no-package-web) package_web_override="false"; shift ;;
+      --output-root) output_root="${2:-}"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "Unknown option for batch mode: $1" ;;
+    esac
+  done
+
+  [[ -n "$config_file" ]] || die "--config is required for batch mode"
+  parse_config "$config_file"
+
+  output_root="${output_root:-$(get_config output_root output)}"
+  secure_mkdir "$output_root"
+  ca_init_paths "$output_root"
+
+  ca_country="$(get_config ca_country SG)"
+  ca_state="$(get_config ca_state Singapore)"
+  ca_locality="$(get_config ca_locality Singapore)"
+  ca_org="$(get_config ca_organization Organization)"
+  ca_ou="$(get_config ca_ou Security)"
+  ca_cn="$(get_config ca_common_name "Dev CA")"
+  ca_days="$(get_config ca_validity_days 730)"
+  ca_curve="$(get_config ca_curve secp384r1)"
+  is_positive_integer "$ca_days" || die "ca_validity_days must be a positive integer"
+  check_openssl_curve "$ca_curve"
+  ca_ensure "$fresh_ca" "$ca_curve" "$ca_days" \
+    "$(ca_subject "$ca_country" "$ca_state" "$ca_locality" "$ca_org" "$ca_ou" "$ca_cn")"
+
+  local cert_count=0
+  while IFS= read -r cert_name; do
+    [[ -n "$cert_name" ]] || continue
+    ((cert_count+=1))
+    cert_type="$(get_cert_prop "$cert_name" type server)"
+    cn="$(get_cert_prop "$cert_name" cn "$cert_name")"
+    san_dns="$(get_cert_prop "$cert_name" san_dns "")"
+    san_ip="$(get_cert_prop "$cert_name" san_ip "")"
+    formats="$(get_cert_prop "$cert_name" formats "pem")"
+    package_web="$(get_cert_prop "$cert_name" package_web "true")"
+    country="$(get_cert_prop "$cert_name" country "$(get_config default_country SG)")"
+    state="$(get_cert_prop "$cert_name" state "$(get_config default_state Singapore)")"
+    locality="$(get_cert_prop "$cert_name" locality "$(get_config default_locality Singapore)")"
+    organization="$(get_cert_prop "$cert_name" organization "$(get_config default_organization Organization)")"
+    ou="$(get_cert_prop "$cert_name" ou "$(get_config default_ou Engineering)")"
+    days="$(get_cert_prop "$cert_name" validity_days "$(get_config default_validity_days 365)")"
+    curve="$(get_cert_prop "$cert_name" curve "$(get_config default_curve secp384r1)")"
+    validate_cert_name "$cert_name"
+    is_positive_integer "$days" || die "cert.${cert_name}.validity_days must be a positive integer"
+
+    if [[ "$cert_type" == "client" ]]; then
+      [[ -z "$san_dns" ]] && san_dns="$cn"
+      generate_client_cert "$cert_name" "$cn" "$san_dns" "$san_ip" "$formats" \
+        "$country" "$state" "$locality" "$organization" "$ou" "$days" "$curve" "$output_root"
+    else
+      [[ -z "$san_dns" ]] && san_dns="${cn},localhost"
+      if [[ -n "$package_web_override" ]]; then
+        package_web="$package_web_override"
+      fi
+      generate_server_cert "$cert_name" "$cn" "$san_dns" "$san_ip" "$formats" \
+        "$country" "$state" "$locality" "$organization" "$ou" "$days" "$curve" "$output_root" "$package_web"
+    fi
+  done < <(list_cert_names)
+
+  [[ "$cert_count" -gt 0 ]] || die "No cert.<name>.* entries found in config '${config_file}'."
+
+  generate_report "$output_root"
+  log_ok "Batch generation completed"
+}
+
+run_leaf_mode() {
+  local profile="${1:?profile required}"
+  shift
+  local cn=""
+  local cert_name=""
+  local san_dns=""
+  local san_ip=""
+  local formats="pem"
+  local fresh_ca=false
+  local package_web=true
+  local output_root="output"
+  local country="SG"
+  local state="Singapore"
+  local locality="Singapore"
+  local organization="Organization"
+  local ou="Engineering"
+  local days="365"
+  local curve="secp384r1"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --cn) cn="${2:-}"; shift 2 ;;
+      --name) cert_name="${2:-}"; shift 2 ;;
+      --san-dns) san_dns="${2:-}"; shift 2 ;;
+      --san-ip) san_ip="${2:-}"; shift 2 ;;
+      --formats) formats="${2:-}"; shift 2 ;;
+      --fresh-ca) fresh_ca=true; shift ;;
+      --package-web) package_web=true; shift ;;
+      --no-package-web) package_web=false; shift ;;
+      --output-root) output_root="${2:-}"; shift 2 ;;
+      --country) country="${2:-}"; shift 2 ;;
+      --state) state="${2:-}"; shift 2 ;;
+      --locality) locality="${2:-}"; shift 2 ;;
+      --organization) organization="${2:-}"; shift 2 ;;
+      --ou) ou="${2:-}"; shift 2 ;;
+      --validity-days) days="${2:-}"; shift 2 ;;
+      --curve) curve="${2:-}"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "Unknown option for ${profile}: $1" ;;
+    esac
+  done
+
+  [[ -n "$cn" ]] || die "--cn is required"
+  cert_name="${cert_name:-$cn}"
+  validate_cert_name "$cert_name"
+  is_positive_integer "$days" || die "--validity-days must be a positive integer"
+  validate_formats_csv "$formats"
+  validate_csv_dns "$san_dns"
+  validate_csv_ip "$san_ip"
+  [[ -z "$san_dns" && "$profile" == "server" ]] && san_dns="${cn},localhost"
+  [[ -z "$san_dns" && "$profile" == "client" ]] && san_dns="${cn}"
+
+  secure_mkdir "$output_root"
+  ca_init_paths "$output_root"
+  ca_ensure "$fresh_ca" "secp384r1" "730" "$(ca_subject "SG" "Singapore" "Singapore" "Organization" "Security" "Dev CA")"
+
+  if [[ "$profile" == "client" ]]; then
+    generate_client_cert "$cert_name" "$cn" "$san_dns" "$san_ip" "$formats" \
+      "$country" "$state" "$locality" "$organization" "$ou" "$days" "$curve" "$output_root"
+  else
+    generate_server_cert "$cert_name" "$cn" "$san_dns" "$san_ip" "$formats" \
+      "$country" "$state" "$locality" "$organization" "$ou" "$days" "$curve" "$output_root" "$package_web"
+  fi
+
+  generate_report "$output_root"
+}
+
+run_ca_mode() {
+  local fresh=false
+  local show_info=false
+  local output_root="output"
+  local curve="secp384r1"
+  local days="730"
+  local subject
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --fresh) fresh=true; shift ;;
+      --info) show_info=true; shift ;;
+      --output-root) output_root="${2:-}"; shift 2 ;;
+      --curve) curve="${2:-}"; shift 2 ;;
+      --days) days="${2:-}"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "Unknown option for ca: $1" ;;
+    esac
+  done
+
+  secure_mkdir "$output_root"
+  ca_init_paths "$output_root"
+  is_positive_integer "$days" || die "--days must be a positive integer"
+  check_openssl_curve "$curve"
+  subject="$(ca_subject "SG" "Singapore" "Singapore" "Organization" "Security" "Dev CA")"
+  ca_ensure "$fresh" "$curve" "$days" "$subject"
+  [[ "$show_info" == "true" ]] && ca_info
+}
+
+run_verify_mode() {
+  local cert=""
+  local ca=""
+  local expected_dns=""
+  local expected_ip=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --cert) cert="${2:-}"; shift 2 ;;
+      --ca) ca="${2:-}"; shift 2 ;;
+      --expected-dns) expected_dns="${2:-}"; shift 2 ;;
+      --expected-ip) expected_ip="${2:-}"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "Unknown option for verify: $1" ;;
+    esac
+  done
+
+  [[ -n "$cert" && -n "$ca" ]] || die "--cert and --ca are required for verify"
+  validate_cert "$cert" "$ca"
+  check_sans "$cert" "$expected_dns" "$expected_ip"
+  print_cert_summary "$cert"
+}
+
+main() {
+  ensure_openssl
+  [[ $# -gt 0 ]] || { usage; exit 1; }
+
+  if [[ -f "${1}" && "${1##*.}" =~ ^(ya?ml)$ ]]; then
+    run_batch_mode --config "$@"
+    exit 0
+  fi
+
+  case "$1" in
+    server)
+      shift
+      run_leaf_mode "server" "$@"
+      ;;
+    client)
+      shift
+      run_leaf_mode "client" "$@"
+      ;;
+    ca)
+      shift
+      run_ca_mode "$@"
+      ;;
+    verify)
+      shift
+      run_verify_mode "$@"
+      ;;
+    doctor)
+      shift
+      run_doctor "$@"
+      ;;
+    --config|--fresh-ca|--output-root)
+      run_batch_mode "$@"
+      ;;
+    -h|--help)
+      usage
+      ;;
+    *)
+      die "Unknown command: $1. Run './certgen --help' to see valid commands."
+      ;;
+  esac
+}
+
+main "$@"
+

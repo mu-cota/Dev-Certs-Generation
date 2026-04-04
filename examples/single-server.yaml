@@ -1,0 +1,25 @@
+output_root: "output"
+
+ca_country: "SG"
+ca_state: "Singapore"
+ca_locality: "Singapore"
+ca_organization: "Example Bank"
+ca_ou: "Platform Security"
+ca_common_name: "Example Bank Dev CA"
+ca_validity_days: "730"
+ca_curve: "secp384r1"
+
+default_country: "SG"
+default_state: "Singapore"
+default_locality: "Singapore"
+default_organization: "Example Bank"
+default_ou: "Platform Security"
+default_validity_days: "365"
+default_curve: "secp384r1"
+
+cert.api-gateway.type: "server"
+cert.api-gateway.cn: "api-gateway"
+cert.api-gateway.san_dns: "api-gateway,api-gateway.internal,localhost"
+cert.api-gateway.san_ip: "127.0.0.1"
+cert.api-gateway.formats: "pem,pkcs12,jks"
+

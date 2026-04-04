@@ -1,5 +1,8 @@
 #!/bin/bash
-# Script to set up directory structure and generate TLS certificates 
+# Legacy script retained for reference only.
+# Replaced by ./certgen
+
+# Script to set up directory structure and generate TLS certificates
 
 # Create directories for configuration and data storage
 mkdir -p data/vault-0
@@ -13,7 +16,7 @@ mkdir -p certificates
 cd certificates
 
 # Generate root CA key and certificate
-openssl genrsa -out ca.key 4096 
+openssl genrsa -out ca.key 4096
 openssl req -x509 -new -nodes -key ca.key -sha256 -days 732 -out ca.crt \
   -subj "/C=SG/ST=State/L=City/O=Organization/CN=Dev CA"
 
@@ -48,3 +51,4 @@ echo "Certificates generated and placed in config/vault-0/"
 cd ..
 
 echo "Setup complete!"
+

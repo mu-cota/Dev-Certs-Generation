@@ -1,0 +1,37 @@
+output_root: "output"
+
+ca_country: "SG"
+ca_state: "Singapore"
+ca_locality: "Singapore"
+ca_organization: "Example Bank"
+ca_ou: "Shared Services"
+ca_common_name: "Example Bank Shared Services CA"
+ca_validity_days: "730"
+ca_curve: "secp384r1"
+
+default_country: "SG"
+default_state: "Singapore"
+default_locality: "Singapore"
+default_organization: "Example Bank"
+default_ou: "Shared Services"
+default_validity_days: "365"
+default_curve: "secp384r1"
+
+cert.vault-0.type: "server"
+cert.vault-0.cn: "vault-0"
+cert.vault-0.san_dns: "vault-0,vault-0.vault.svc,vault.service.internal,localhost"
+cert.vault-0.san_ip: "127.0.0.1"
+cert.vault-0.formats: "pem,pkcs12,jks"
+
+cert.consul-0.type: "server"
+cert.consul-0.cn: "consul-0"
+cert.consul-0.san_dns: "consul-0,consul.service.consul,localhost"
+cert.consul-0.san_ip: "127.0.0.1"
+cert.consul-0.formats: "pem,pkcs12,jks"
+
+cert.nginx-gw.type: "server"
+cert.nginx-gw.cn: "nginx-gateway"
+cert.nginx-gw.san_dns: "nginx-gateway,ingress.internal,localhost"
+cert.nginx-gw.san_ip: "127.0.0.1"
+cert.nginx-gw.formats: "pem,pkcs12,jks"
+

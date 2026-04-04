@@ -1,0 +1,44 @@
+# Certificate generation configuration
+
+output_root: "output"
+
+# CA profile (self-signed root CA)
+ca_country: "SG"
+ca_state: "Singapore"
+ca_locality: "Singapore"
+ca_organization: "My Bank Pte Ltd"
+ca_ou: "Platform Engineering"
+ca_common_name: "My Bank Internal Dev CA"
+ca_validity_days: "730"
+ca_curve: "secp384r1"
+
+# Default leaf profile values
+default_country: "SG"
+default_state: "Singapore"
+default_locality: "Singapore"
+default_organization: "My Bank Pte Ltd"
+default_ou: "Platform Engineering"
+default_validity_days: "365"
+default_curve: "secp384r1"
+
+# Multi-service server certificates
+cert.vault-0.type: "server"
+cert.vault-0.cn: "vault-0"
+cert.vault-0.san_dns: "vault-0,vault-0.vault.svc,vault-0.vault.svc.cluster.local,localhost"
+cert.vault-0.san_ip: "127.0.0.1"
+cert.vault-0.formats: "pem,pkcs12,jks"
+cert.vault-0.package_web: "true"
+
+cert.consul-0.type: "server"
+cert.consul-0.cn: "consul-0"
+cert.consul-0.san_dns: "consul-0,consul.service.consul,localhost"
+cert.consul-0.san_ip: "127.0.0.1"
+cert.consul-0.formats: "pem,pkcs12,jks"
+cert.consul-0.package_web: "false"
+
+# Client mTLS certificate
+cert.payment-svc.type: "client"
+cert.payment-svc.cn: "payment-service"
+cert.payment-svc.san_dns: "payment.internal"
+cert.payment-svc.formats: "pem,pkcs12,jks"
+
