@@ -2,14 +2,14 @@
 
 set -euo pipefail
 
-declare -gA CONFIG=()
+CONFIG_STORE=""
 
 parse_config() {
   local file="${1:?config path required}"
   local line key value
 
   [[ -f "$file" ]] || die "Config file not found: $file"
-  CONFIG=()
+  CONFIG_STORE="$(mktemp "${TMPDIR:-/tmp}/certgen-config.XXXXXX")"
 
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
@@ -25,7 +25,7 @@ parse_config() {
       if [[ "$value" =~ ^\"(.*)\"$ ]]; then
         value="${BASH_REMATCH[1]}"
       fi
-      CONFIG["$key"]="$value"
+      printf "%s\t%s\n" "$key" "$value" >>"$CONFIG_STORE"
     fi
   done <"$file"
 }
@@ -33,8 +33,16 @@ parse_config() {
 get_config() {
   local key="${1:?key required}"
   local default_value="${2:-}"
-  if [[ -n "${CONFIG[$key]+x}" ]]; then
-    printf "%s" "${CONFIG[$key]}"
+  local value
+  [[ -n "$CONFIG_STORE" && -f "$CONFIG_STORE" ]] || {
+    printf "%s" "$default_value"
+    return
+  }
+  value="$(
+    awk -F '\t' -v k="$key" '$1==k{v=$2} END{print v}' "$CONFIG_STORE"
+  )"
+  if [[ -n "$value" ]]; then
+    printf "%s" "$value"
   else
     printf "%s" "$default_value"
   fi
@@ -49,14 +57,10 @@ get_cert_prop() {
 }
 
 list_cert_names() {
-  local key name
-  local -A names=()
-  for key in "${!CONFIG[@]}"; do
-    if [[ "$key" =~ ^cert\.([^.]+)\.[^.]+$ ]]; then
-      name="${BASH_REMATCH[1]}"
-      names["$name"]=1
-    fi
-  done
-  printf "%s\n" "${!names[@]}" | awk 'NF' | sort
+  [[ -n "$CONFIG_STORE" && -f "$CONFIG_STORE" ]] || return 0
+  awk -F '\t' '{print $1}' "$CONFIG_STORE" \
+    | awk -F '.' '/^cert\.[^.]+\.[^.]+$/ {print $2}' \
+    | awk 'NF' \
+    | sort -u
 }
 

@@ -38,7 +38,7 @@ Enterprise-grade certificate generation for development and production-like inte
 
 ## Prerequisites
 
-- Bash 4+
+- Bash 3.2+
 - OpenSSL
 - Optional: `keytool` (required only for JKS generation)
 
@@ -72,7 +72,6 @@ chmod +x certgen cleanup.sh
 ## CLI Usage
 
 ```bash
-./certgen --config <file> [--fresh-ca] [--output-root <dir>]
 ./certgen --config <file> [--fresh-ca] [--output-root <dir>] [--package-web|--no-package-web]
 ./certgen <config-file> [--fresh-ca] [--output-root <dir>]   # shorthand
 ./certgen server --cn <name> [--name <id>] [--san-dns <csv>] [--san-ip <csv>] [--formats <csv>] [--fresh-ca] [--output-root <dir>] [--package-web|--no-package-web]

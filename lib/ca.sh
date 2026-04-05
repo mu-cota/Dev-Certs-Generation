@@ -34,6 +34,7 @@ ca_generate() {
   local curve="${1:?curve required}"
   local days="${2:?days required}"
   local subject="${3:?subject required}"
+  local ca_conf
 
   check_openssl_curve "$curve"
   secure_mkdir "$CA_DIR"
@@ -43,11 +44,26 @@ ca_generate() {
   chmod 600 "$CA_KEY"
 
   log_info "Generating self-signed CA certificate (${days}d)"
+  ca_conf="$(mktemp "${TMPDIR:-/tmp}/certgen-ca-conf.XXXXXX")"
+  cat >"$ca_conf" <<'EOF'
+[req]
+distinguished_name=req_dn
+x509_extensions=v3_ca
+prompt=no
+
+[req_dn]
+
+[v3_ca]
+basicConstraints=critical,CA:TRUE,pathlen:0
+keyUsage=critical,keyCertSign,cRLSign
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid:always,issuer:always
+EOF
+
   openssl req -x509 -new -sha384 -key "$CA_KEY" \
     -days "$days" -out "$CA_CERT" -subj "$subject" \
-    -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
-    -addext "keyUsage=critical,keyCertSign,cRLSign" \
-    -addext "subjectKeyIdentifier=hash"
+    -extensions v3_ca -config "$ca_conf"
+  rm -f "$ca_conf"
   chmod 644 "$CA_CERT"
 
   log_ok "CA created at $CA_DIR"

@@ -23,24 +23,22 @@ check_sans() {
   local expected_ip_csv="${3:-}"
   local sans
   local entry
-  local -a expected_dns=()
-  local -a expected_ip=()
 
   sans="$(extract_sans "$cert" || true)"
-  csv_to_array "$expected_dns_csv" expected_dns
-  csv_to_array "$expected_ip_csv" expected_ip
 
-  for entry in "${expected_dns[@]}"; do
+  while IFS= read -r entry; do
+    [[ -z "$entry" ]] && continue
     if ! grep -q "^DNS:${entry}$" <<<"$sans"; then
       die "SAN validation failed for $cert: missing DNS:${entry}"
     fi
-  done
+  done < <(csv_to_lines "$expected_dns_csv")
 
-  for entry in "${expected_ip[@]}"; do
+  while IFS= read -r entry; do
+    [[ -z "$entry" ]] && continue
     if ! grep -q "^IPAddress:${entry}$" <<<"$sans"; then
       die "SAN validation failed for $cert: missing IP:${entry}"
     fi
-  done
+  done < <(csv_to_lines "$expected_ip_csv")
 
   log_ok "SAN values validated for $cert"
 }

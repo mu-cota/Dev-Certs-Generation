@@ -73,29 +73,27 @@ secure_write_file() {
   chmod "$mode" "$path"
 }
 
-csv_to_array() {
+csv_to_lines() {
   local csv="${1:-}"
-  local -n out_ref="${2:?output array ref required}"
   local item
-  out_ref=()
-  IFS=',' read -r -a _tmp <<<"$csv"
-  for item in "${_tmp[@]}"; do
+  local old_ifs="$IFS"
+  IFS=','
+  for item in $csv; do
     item="$(trim "$item")"
-    [[ -n "$item" ]] && out_ref+=("$item")
+    [[ -n "$item" ]] && printf "%s\n" "$item"
   done
+  IFS="$old_ifs"
 }
 
 contains_csv_value() {
   local csv="${1:-}"
   local needle="${2:-}"
-  local -a entries=()
   local entry
-  csv_to_array "$csv" entries
-  for entry in "${entries[@]}"; do
+  while IFS= read -r entry; do
     if [[ "$entry" == "$needle" ]]; then
       return 0
     fi
-  done
+  done < <(csv_to_lines "$csv")
   return 1
 }
 
@@ -116,37 +114,33 @@ validate_cert_name() {
 
 validate_csv_dns() {
   local csv="${1:-}"
-  local -a entries=()
   local entry
   [[ -z "$csv" ]] && return 0
-  csv_to_array "$csv" entries
-  for entry in "${entries[@]}"; do
+  while IFS= read -r entry; do
     [[ "$entry" =~ ^[A-Za-z0-9.-]+$ ]] || die "Invalid DNS SAN entry: '$entry'"
-  done
+  done < <(csv_to_lines "$csv")
 }
 
 validate_csv_ip() {
   local csv="${1:-}"
-  local -a entries=()
   local entry
   [[ -z "$csv" ]] && return 0
-  csv_to_array "$csv" entries
-  for entry in "${entries[@]}"; do
+  while IFS= read -r entry; do
     [[ "$entry" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || die "Invalid IP SAN entry: '$entry'"
-  done
+  done < <(csv_to_lines "$csv")
 }
 
 validate_formats_csv() {
   local csv="${1:-pem}"
-  local -a entries=()
   local entry
-  csv_to_array "$csv" entries
-  [[ ${#entries[@]} -gt 0 ]] || die "At least one format is required (pem, pkcs12, jks)."
-  for entry in "${entries[@]}"; do
+  local count=0
+  while IFS= read -r entry; do
+    ((count+=1))
     case "$entry" in
       pem|pkcs12|jks) ;;
       *) die "Invalid format '$entry'. Allowed: pem, pkcs12, jks" ;;
     esac
-  done
+  done < <(csv_to_lines "$csv")
+  [[ "$count" -gt 0 ]] || die "At least one format is required (pem, pkcs12, jks)."
 }
 

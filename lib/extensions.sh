@@ -6,65 +6,75 @@ build_server_ext() {
   local ext_path="${1:?ext_path required}"
   local san_dns_csv="${2:-}"
   local san_ip_csv="${3:-}"
-  local -a dns_list=()
-  local -a ip_list=()
-  local i=1
-
-  csv_to_array "$san_dns_csv" dns_list
-  csv_to_array "$san_ip_csv" ip_list
+  local i
+  local has_sans=0
 
   {
     echo "authorityKeyIdentifier=keyid,issuer"
     echo "basicConstraints=critical,CA:FALSE"
     echo "keyUsage=critical,digitalSignature,keyEncipherment"
     echo "extendedKeyUsage=serverAuth"
-    if [[ ${#dns_list[@]} -gt 0 || ${#ip_list[@]} -gt 0 ]]; then
+    if [[ -n "$san_dns_csv" || -n "$san_ip_csv" ]]; then
       echo "subjectAltName=@alt_names"
       echo
       echo "[alt_names]"
-      for entry in "${dns_list[@]}"; do
+      i=1
+      while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        has_sans=1
         echo "DNS.${i}=${entry}"
         ((i++))
-      done
+      done < <(csv_to_lines "$san_dns_csv")
       i=1
-      for entry in "${ip_list[@]}"; do
+      while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        has_sans=1
         echo "IP.${i}=${entry}"
         ((i++))
-      done
+      done < <(csv_to_lines "$san_ip_csv")
     fi
   } >"$ext_path"
+
+  if [[ "$has_sans" -eq 0 ]]; then
+    sed -i.bak '/subjectAltName=@alt_names/,$d' "$ext_path" && rm -f "${ext_path}.bak"
+  fi
 }
 
 build_client_ext() {
   local ext_path="${1:?ext_path required}"
   local san_dns_csv="${2:-}"
   local san_ip_csv="${3:-}"
-  local -a dns_list=()
-  local -a ip_list=()
-  local i=1
-
-  csv_to_array "$san_dns_csv" dns_list
-  csv_to_array "$san_ip_csv" ip_list
+  local i
+  local has_sans=0
 
   {
     echo "authorityKeyIdentifier=keyid,issuer"
     echo "basicConstraints=critical,CA:FALSE"
     echo "keyUsage=critical,digitalSignature"
     echo "extendedKeyUsage=clientAuth"
-    if [[ ${#dns_list[@]} -gt 0 || ${#ip_list[@]} -gt 0 ]]; then
+    if [[ -n "$san_dns_csv" || -n "$san_ip_csv" ]]; then
       echo "subjectAltName=@alt_names"
       echo
       echo "[alt_names]"
-      for entry in "${dns_list[@]}"; do
+      i=1
+      while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        has_sans=1
         echo "DNS.${i}=${entry}"
         ((i++))
-      done
+      done < <(csv_to_lines "$san_dns_csv")
       i=1
-      for entry in "${ip_list[@]}"; do
+      while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        has_sans=1
         echo "IP.${i}=${entry}"
         ((i++))
-      done
+      done < <(csv_to_lines "$san_ip_csv")
     fi
   } >"$ext_path"
+
+  if [[ "$has_sans" -eq 0 ]]; then
+    sed -i.bak '/subjectAltName=@alt_names/,$d' "$ext_path" && rm -f "${ext_path}.bak"
+  fi
 }
 

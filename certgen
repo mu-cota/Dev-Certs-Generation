@@ -303,7 +303,7 @@ main() {
       shift
       run_doctor "$@"
       ;;
-    --config|--fresh-ca|--output-root)
+    --config|--fresh-ca|--output-root|--package-web|--no-package-web)
       run_batch_mode "$@"
       ;;
     -h|--help)
