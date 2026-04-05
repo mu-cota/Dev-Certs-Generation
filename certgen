@@ -23,7 +23,9 @@ Usage:
   ./certgen server --cn <name> [options]
   ./certgen client --cn <name> [options]
   ./certgen ca [--fresh] [--info] [--output-root <dir>] [--curve <name>] [--days <n>]
-  ./certgen verify --cert <path> --ca <path> [--expected-dns <csv>] [--expected-ip <csv>]
+  ./certgen verify --cert <path> [--ca <path>] [--expected-dns <csv>] [--expected-ip <csv>]
+                  [--query <field>] [--text] [--check-expiry-days <n>]
+                  [--revocation ocsp|crl] [--strict-revocation]
   ./certgen doctor
 
 Common options for server/client:
@@ -255,6 +257,11 @@ run_verify_mode() {
   local ca=""
   local expected_dns=""
   local expected_ip=""
+  local query=""
+  local show_text=false
+  local check_expiry_days=""
+  local revocation_method=""
+  local strict_revocation=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -262,15 +269,42 @@ run_verify_mode() {
       --ca) ca="${2:-}"; shift 2 ;;
       --expected-dns) expected_dns="${2:-}"; shift 2 ;;
       --expected-ip) expected_ip="${2:-}"; shift 2 ;;
+      --query) query="${2:-}"; shift 2 ;;
+      --text) show_text=true; shift ;;
+      --check-expiry-days) check_expiry_days="${2:-}"; shift 2 ;;
+      --revocation) revocation_method="${2:-}"; shift 2 ;;
+      --strict-revocation) strict_revocation=true; shift ;;
       -h|--help) usage; exit 0 ;;
       *) die "Unknown option for verify: $1" ;;
     esac
   done
 
-  [[ -n "$cert" && -n "$ca" ]] || die "--cert and --ca are required for verify"
-  validate_cert "$cert" "$ca"
-  check_sans "$cert" "$expected_dns" "$expected_ip"
-  print_cert_summary "$cert"
+  [[ -n "$cert" ]] || die "--cert is required for verify"
+  assert_cert_file "$cert"
+
+  if [[ -n "$ca" ]]; then
+    validate_cert "$cert" "$ca"
+  fi
+
+  if [[ -n "$expected_dns" || -n "$expected_ip" ]]; then
+    check_sans "$cert" "$expected_dns" "$expected_ip"
+  fi
+
+  if [[ -n "$check_expiry_days" ]]; then
+    check_cert_expiry_window "$cert" "$check_expiry_days"
+  fi
+
+  if [[ -n "$revocation_method" ]]; then
+    check_revocation "$cert" "$ca" "$revocation_method" "$strict_revocation"
+  fi
+
+  if [[ "$show_text" == "true" ]]; then
+    print_cert_text "$cert"
+  elif [[ -n "$query" ]]; then
+    print_cert_query "$cert" "$query"
+  else
+    print_cert_details_default "$cert"
+  fi
 }
 
 main() {
